@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TNF QC Scoring</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --ink:#1c2430; --muted:#6b7585;
+    --line:#e3e7ee; --line-strong:#cfd6e0;
+    --pm:#f6c945; --pm-soft:#fdf6dd; --pm-line:#ecd27a;
+    --qc:#2faa6b; --qc-soft:#e7f6ed; --qc-line:#a7d9bd;
+    --score:#2e6cf0; --score-soft:#e8f0ff;
+    --good:#1f8f55; --good-soft:#e7f6ed;
+    --mid:#c98a14;  --mid-soft:#fbf1d8;
+    --bad:#d8473d;  --bad-soft:#fdecea;
+    --radius:10px;
+    --shadow:0 1px 2px rgba(20,30,48,.06),0 6px 20px rgba(20,30,48,.05);
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px 18px 60px}
+
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+  header.top h1{font-size:18px;margin:0;letter-spacing:-.2px}
+  .conn{font-size:12px;font-family:var(--mono);padding:5px 10px;border-radius:999px;border:1px solid var(--line-strong);background:#fff;white-space:nowrap}
+  .conn.live{border-color:var(--qc-line);background:var(--qc-soft);color:var(--good)}
+  .conn.local{border-color:var(--pm-line);background:var(--pm-soft);color:#8a6d12}
+
+  nav.views{display:flex;gap:4px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px;width:fit-content;margin-bottom:16px;box-shadow:var(--shadow)}
+  nav.views button{border:0;background:transparent;padding:8px 18px;border-radius:999px;font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer}
+  nav.views button.active{background:var(--ink);color:#fff}
+  nav.views button .badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:999px;background:var(--bad);color:#fff;font-size:11px;font-family:var(--mono);line-height:18px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-top:14px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 14px}
+
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600}
+  .field input,.field select,.field textarea{width:100%;padding:9px 11px;border:1px solid var(--line-strong);border-radius:8px;font-size:14px;background:#fff;font-family:var(--sans)}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--score);outline-offset:-1px;border-color:var(--score)}
+  #asn{font-family:var(--mono);text-transform:uppercase;font-weight:600;letter-spacing:.5px}
+
+  .lookup{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr auto auto;gap:12px;align-items:end}
+  button{cursor:pointer;font-family:var(--sans);font-size:13.5px;font-weight:600;border-radius:8px;border:1px solid transparent;padding:9px 16px;transition:.12s}
+  button:focus-visible{outline:2px solid var(--score);outline-offset:2px}
+  .btn-primary{background:var(--ink);color:#fff}.btn-primary:hover{background:#000}
+  .btn-ghost{background:#fff;border-color:var(--line-strong);color:var(--ink)}.btn-ghost:hover{border-color:#9aa6b5}
+  .btn-save{background:var(--score);color:#fff;padding:11px 24px;font-size:14px}.btn-save:hover{background:#1d57d6}
+  button:disabled{opacity:.5;cursor:not-allowed}
+
+  .asn-status{margin-top:13px;font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid var(--line-strong);background:#f3f5f8;color:var(--muted)}
+  .tag.done{background:var(--qc-soft);border-color:var(--qc-line);color:var(--good)}
+  .tag.miss{background:var(--bad-soft);border-color:#f1b5af;color:var(--bad)}
+
+  .warnbar{margin-top:12px;padding:11px 14px;border-radius:9px;font-size:13px;font-weight:600;display:none}
+  .warnbar.show{display:block}
+  .warnbar.urgent{background:var(--bad-soft);color:var(--bad);border:1px solid #f1b5af}
+  .warnbar.soon{background:var(--mid-soft);color:var(--mid);border:1px solid #ecd27a}
+
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .tab{border:1px solid var(--line-strong);background:#fff;border-radius:999px;padding:8px 15px;font-size:13px;font-weight:600;color:var(--muted)}
+  .tab .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+  .tab.team-PM .dot{background:var(--pm)} .tab.team-QC .dot{background:var(--qc)}
+  .tab[aria-selected="true"]{color:var(--ink);border-color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink)}
+  .tab .check{margin-left:7px;color:var(--good);font-weight:800}
+
+  .legend{font-size:12px;color:var(--muted);margin-bottom:12px}
+  .legend b{font-family:var(--mono)}
+  .dotg{color:var(--good)}.dotm{color:var(--mid)}.dotb{color:var(--bad)}
+
+  .stage-meta{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:16px}
+  .checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .check-row{border:1px solid var(--line);border-radius:9px;padding:12px 13px;background:#fff;border-left-width:4px}
+  .check-row.team-PM{border-left-color:var(--pm);background:var(--pm-soft)}
+  .check-row.team-QC{border-left-color:var(--qc);background:var(--qc-soft)}
+  .check-row .name{font-weight:600;font-size:13.5px;margin-bottom:3px}
+  .check-row .hint{font-size:11.5px;color:var(--muted);margin-bottom:10px}
+  .seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;background:#fff}
+  .seg button{border:0;border-radius:0;padding:7px 15px;font-weight:700;background:#fff;color:var(--muted)}
+  .seg button[aria-pressed="true"][data-v="0"]{background:var(--good);color:#fff}
+  .seg button[aria-pressed="true"][data-v="1"]{background:var(--mid);color:#fff}
+  .seg button[aria-pressed="true"][data-v="2"]{background:var(--bad);color:#fff}
+  .seg button + button{border-left:1px solid var(--line-strong)}
+
+  .save-bar{display:flex;align-items:center;gap:14px;margin-top:18px;flex-wrap:wrap}
+  .save-note{font-size:12px;color:var(--muted)}
+
+  .scores{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .score-block{border:1px solid var(--line);border-radius:9px;padding:14px;border-top:3px solid var(--score)}
+  .score-block.pm{border-top-color:var(--pm)} .score-block.qc{border-top-color:var(--qc)}
+  .score-block .title{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .score-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+  .metric .v{font-size:21px;font-weight:700;font-family:var(--mono)}
+  .metric .l{font-size:11px;color:var(--muted)}
+  .metric .v.err{color:var(--bad)} .metric .v.ok{color:var(--good)}
+
+  .tools{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+  .table-scroll{overflow:auto;border:1px solid var(--line);border-radius:8px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+  th{background:#f3f5f8;position:sticky;top:0;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  td.num{font-family:var(--mono);text-align:center}
+  tr:hover td{background:#fafbfd}
+  .pct-good{color:var(--good);font-weight:700}.pct-mid{color:var(--mid);font-weight:700}.pct-bad{color:var(--bad);font-weight:700}
+  .empty{padding:26px;text-align:center;color:var(--muted);font-size:13px}
+
+  /* deadline alert rows */
+  .alert{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;border:1px solid var(--line);border-left-width:5px;border-radius:10px;padding:13px 15px;margin-bottom:10px;background:#fff}
+  .alert.overdue,.alert.urgent{border-left-color:var(--bad);background:var(--bad-soft)}
+  .alert.soon{border-left-color:var(--mid);background:var(--mid-soft)}
+  .alert.ontrack{border-left-color:var(--score)}
+  .alert.done{border-left-color:var(--good);background:var(--good-soft)}
+  .alert .when{text-align:center;min-width:74px}
+  .alert .when .big{font-size:22px;font-weight:800;font-family:var(--mono);line-height:1}
+  .alert .when .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .alert .who{font-size:12.5px;color:var(--muted)}
+  .alert .who .asn{font-family:var(--mono);font-weight:700;color:var(--ink);font-size:15px;letter-spacing:.5px}
+  .alert .miss-tags{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap}
+  .status-pill{font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;letter-spacing:.03em}
+  .status-pill.overdue,.status-pill.urgent{background:var(--bad);color:#fff}
+  .status-pill.soon{background:var(--mid);color:#fff}
+  .status-pill.ontrack{background:var(--score-soft);color:var(--score)}
+  .status-pill.done{background:var(--good);color:#fff}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;pointer-events:none;transition:.22s;box-shadow:var(--shadow);z-index:50}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{background:var(--bad)}
+
+  .hidden{display:none!important}
+  @media (max-width:760px){.lookup{grid-template-columns:1fr 1fr}.scores{grid-template-columns:1fr}.stage-meta{grid-template-columns:1fr}.alert{grid-template-columns:auto 1fr}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1>TNF QC Scoring</h1>
+    <span id="conn" class="conn">checking…</span>
+  </header>
+
+  <nav class="views">
+    <button data-view="entry" class="active">Entry</button>
+    <button data-view="scorecard">Scorecard</button>
+    <button data-view="deadlines">Deadlines <span class="badge hidden" id="alertBadge">0</span></button>
+  </nav>
+
+  <!-- ================= ENTRY ================= -->
+  <div data-page="entry">
+    <section class="card">
+      <h2>1 · Assignment</h2>
+      <div class="lookup">
+        <div class="field"><label for="asn">ASN code</label><input id="asn" placeholder="e.g. TNF-10293" autocomplete="off"/></div>
+        <div class="field"><label for="reviewType">Review type</label>
+          <select id="reviewType"><option value="">—</option><option>New</option><option>Rescue</option></select></div>
+        <div class="field"><label for="createdOn">Created on</label><input id="createdOn" type="date"/></div>
+        <div class="field"><label for="deadline">Delivery deadline</label><input id="deadline" type="date"/></div>
+        <button class="btn-ghost" id="loadBtn">Load</button>
+        <button class="btn-ghost" id="newBtn">New</button>
+      </div>
+      <div class="asn-status" id="asnStatus">No assignment loaded.</div>
+      <div class="warnbar" id="warnbar"></div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Record checks</h2>
+      <div class="tabs" id="tabs" role="tablist"></div>
+      <div class="legend">Score each check — <b class="dotg">0 = good</b> · <b class="dotm">1 = minor</b> · <b class="dotb">2 = bad</b>. Lower is better; the percentage rises with errors.</div>
+      <div class="stage-meta">
+        <div class="field"><label id="enteredByLabel" for="enteredBy">Your name</label><input id="enteredBy" placeholder="Name" autocomplete="off"/></div>
+        <div class="field"><label for="comments">Comments (optional)</label><input id="comments" placeholder="Anything worth noting for this stage" autocomplete="off"/></div>
+      </div>
+      <div class="checks" id="checks"></div>
+      <div class="save-bar"><button class="btn-save" id="saveBtn">Save this stage</button><span class="save-note" id="saveNote"></span></div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Live score preview</h2>
+      <div class="scores">
+        <div class="score-block pm"><div class="title">PM check</div>
+          <div class="score-grid">
+            <div class="metric"><div class="v" id="pmScore">—</div><div class="l">Points</div></div>
+            <div class="metric"><div class="v err" id="pmErr">—</div><div class="l">Error %</div></div>
+            <div class="metric"><div class="v ok" id="pmCheck">—</div><div class="l">PM check %</div></div>
+          </div></div>
+        <div class="score-block qc"><div class="title">QC check</div>
+          <div class="score-grid">
+            <div class="metric"><div class="v" id="qcScore">—</div><div class="l">Points</div></div>
+            <div class="metric"><div class="v err" id="qcErr">—</div><div class="l">Error %</div></div>
+            <div class="metric"><div class="v ok" id="qualityCheck">—</div><div class="l">Quality check %</div></div>
+          </div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Recent assignments</h2>
+      <div class="tools"><button class="btn-ghost" id="refreshBtn">Refresh</button><button class="btn-ghost" id="exportBtn">Export CSV</button></div>
+      <div class="table-scroll"><table id="recentTable"><thead><tr id="recentHead"></tr></thead><tbody id="recentBody"></tbody></table></div>
+      <div class="empty hidden" id="recentEmpty">No assignments recorded yet.</div>
+    </section>
+  </div>
+
+  <!-- ================= SCORECARD ================= -->
+  <div data-page="scorecard" class="hidden">
+    <section class="card">
+      <h2>Scorecard by ASN code</h2>
+      <div class="stage-meta" style="grid-template-columns:1fr 1fr">
+        <div class="field"><label for="codeList">Paste ASN codes (one per line)</label>
+          <textarea id="codeList" rows="6" placeholder="TNF-10293&#10;TNF-10294&#10;TNF-10295"></textarea></div>
+        <div class="field"><label for="codeFile">…or upload a CSV / text file of codes</label>
+          <input id="codeFile" type="file" accept=".csv,.txt,.tsv"/>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:8px">First column is read as the ASN code. (For Excel, save as CSV first.) Leave both empty to score every assignment.</div></div>
+      </div>
+      <div class="tools"><button class="btn-primary" id="scoreBtn">Get scores</button><button class="btn-ghost" id="scoreExportBtn">Export CSV</button><span class="save-note" id="scoreNote"></span></div>
+      <div class="table-scroll"><table id="scoreTable"><thead><tr id="scoreHead"></tr></thead><tbody id="scoreBody"></tbody></table></div>
+      <div class="empty hidden" id="scoreEmpty">Enter or upload codes, then Get scores.</div>
+    </section>
+  </div>
+
+  <!-- ================= DEADLINES ================= -->
+  <div data-page="deadlines" class="hidden">
+    <section class="card">
+      <h2>Delivery deadlines</h2>
+      <div class="tools">
+        <button class="btn-ghost" id="dlRefresh">Refresh</button>
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)">
+          <input type="checkbox" id="onlyAttention" checked/> Needs attention only</label>
+        <span class="save-note" id="dlNote"></span>
+      </div>
+      <div id="alertList"></div>
+      <div class="empty hidden" id="dlEmpty">No assignments with a delivery deadline yet.</div>
+    </section>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const CONFIG = {
+  ENDPOINT: "",          // paste your Apps Script Web App URL; blank = local demo mode
+
+  MAX_SCORE: 2,          // each check is scored 0..MAX_SCORE  (0 = best, 2 = worst)
+  // Max points per side. null = auto = (#fields in that side) × MAX_SCORE.
+  PM_MAX_POINTS: null,   // 3 fields × 2 = 6
+  QC_MAX_POINTS: null,   // 6 fields × 2 = 12
+
+  ALERT_URGENT_DAYS: 2,  // ≤ this many days to deadline & incomplete -> urgent (red)
+  ALERT_SOON_DAYS: 5,    // ≤ this many days & incomplete -> due soon (amber)
+};
+
+/* ============================================================
+   FIELDS — each maps to the EXACT sheet column header
+   ============================================================ */
+const FIELDS = {
+  sanctioned_country: { label:"Sanctioned Country", team:"PM", hint:"compliance flag", col:"Sanctioned Country (Yes (1)/No (0))" },
+  retraction_pm:      { label:"Retraction Database (PM)", team:"PM", hint:"retraction check", col:"Retraction Database (PM)" },
+  ai_text_pm:         { label:"AI generated text (PM)", team:"PM", hint:"AI text check", col:"AI generated text (Yes/No) (PM)" },
+  keyword_mismatch:   { label:"Keyword Mismatch", team:"QC", hint:"keyword alignment", col:"Keyword Mismatch" },
+  primary_sa:         { label:"Primary Subject Area", team:"QC", hint:"primary SA accuracy", col:"Primary Subject Area" },
+  secondary_sa:       { label:"Secondary Subject Area", team:"QC", hint:"secondary SA accuracy", col:"Secondary Subject Area" },
+  retraction_qc:      { label:"Retraction Database (QC)", team:"QC", hint:"retraction check", col:"Retraction Database (QC)" },
+  generic_feedback:   { label:"Generic feedback", team:"QC", hint:"feedback quality", col:"Generic feedback (Yes/No)" },
+  ai_text_changes_qc: { label:"AI generated text changes (QC)", team:"QC", hint:"AI text changes", col:"AI generated text changes (Yes/No) (QC)" },
+};
+
+/* STAGES — adjust field grouping to match your real flow */
+const STAGES = [
+  { id:"pm_raise",   label:"PM · Raise assignment", team:"PM", fields:["sanctioned_country","retraction_pm"] },
+  { id:"qt_match",   label:"QT · Expert match",     team:"QC", fields:["keyword_mismatch","primary_sa","secondary_sa"] },
+  { id:"qc_check",   label:"QC · Quality check",    team:"QC", fields:["retraction_qc","generic_feedback","ai_text_changes_qc"] },
+  { id:"pm_checkfl", label:"PM · CheckFL",          team:"PM", fields:["ai_text_pm"] },
+];
+
+const COL = {
+  date:"Date", createdOn:"Created On", deadline:"Delivery Deadline",
+  pmChecker:"PM Checker", qcChecker:"QC checker",
+  reviewType:"Review Type (New/Rescue)", asn:"ASN Code",
+  qcScore:"Total scoring (QC Score)", pmScore:"Total scoring (PM Score)",
+  errPct:"Error%", qualityPct:"Quality Check %", errPmPct:"Error% (PM)", pmCheckPct:"PM Check %",
+  comments:"Comments (optional)", updated:"Last Updated", stagesDone:"Stages Completed",
+};
+
+const PM_KEYS=["sanctioned_country","retraction_pm","ai_text_pm"];
+const QC_KEYS=["keyword_mismatch","primary_sa","secondary_sa","retraction_qc","generic_feedback","ai_text_changes_qc"];
+
+/* ---------- state ---------- */
+let activeStage = STAGES[0].id;
+let current = {};
+let lastScorecardRows = [];
+const LOCAL_KEY = "tnf_qc_records_v2";
+
+/* ============================================================
+   DATA LAYER
+   ============================================================ */
+const live = () => !!CONFIG.ENDPOINT;
+function localAll(){ try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||"{}");}catch{return{};} }
+function localSave(m){ localStorage.setItem(LOCAL_KEY, JSON.stringify(m)); }
+
+async function apiGetAll(){
+  if(!live()) return Object.values(localAll());
+  const r=await fetch(CONFIG.ENDPOINT,{method:"GET"}); const j=await r.json(); return j.records||[];
+}
+async function apiGetOne(asn){
+  if(!live()) return localAll()[asn]||null;
+  const url=CONFIG.ENDPOINT+(CONFIG.ENDPOINT.includes("?")?"&":"?")+"asn="+encodeURIComponent(asn);
+  const r=await fetch(url,{method:"GET"}); const j=await r.json(); return j.record||null;
+}
+async function apiUpsert(asn, values){
+  if(!live()){
+    const m=localAll(); const rec=m[asn]||{[COL.asn]:asn,[COL.date]:today()};
+    Object.assign(rec,values); const s=computeScores(rec); writeScores(rec,s);
+    rec[COL.updated]=nowStamp(); m[asn]=rec; localSave(m); return rec;
+  }
+  const r=await fetch(CONFIG.ENDPOINT,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({asn,values})});
+  const j=await r.json(); if(!j.ok) throw new Error(j.error||"save failed"); return j.record;
+}
+
+/* ---------- scoring (0..2 scale, higher = more error) ---------- */
+function num(v){const n=Number(v);return isNaN(n)?0:n;}
+function pmMax(){ return CONFIG.PM_MAX_POINTS ?? PM_KEYS.length*CONFIG.MAX_SCORE; }
+function qcMax(){ return CONFIG.QC_MAX_POINTS ?? QC_KEYS.length*CONFIG.MAX_SCORE; }
+function computeScores(rec){
+  const pm=PM_KEYS.reduce((s,k)=>s+num(rec[FIELDS[k].col]),0);
+  const qc=QC_KEYS.reduce((s,k)=>s+num(rec[FIELDS[k].col]),0);
+  const errPm=pmMax()?pm/pmMax()*100:0;
+  const errQc=qcMax()?qc/qcMax()*100:0;
+  return {pm,qc,errPm,pmCheck:100-errPm,errQc,qualityCheck:100-errQc};
+}
+function writeScores(rec,s){
+  rec[COL.pmScore]=s.pm; rec[COL.qcScore]=s.qc;
+  rec[COL.errPmPct]=round(s.errPm); rec[COL.pmCheckPct]=round(s.pmCheck);
+  rec[COL.errPct]=round(s.errQc);   rec[COL.qualityPct]=round(s.qualityCheck);
+}
+const round=n=>Math.round(n*100)/100;
+
+/* ---------- dates ---------- */
+function today(){const d=new Date();return (d.getMonth()+1)+"/"+d.getDate()+"/"+d.getFullYear();}
+function todayIso(){return new Date().toISOString().slice(0,10);}
+function nowStamp(){return new Date().toISOString().replace("T"," ").slice(0,16);}
+function daysUntil(iso){ if(!iso) return null;
+  const d=new Date(iso+"T00:00:00"); if(isNaN(d)) return null;
+  const t=new Date(); t.setHours(0,0,0,0);
+  return Math.round((d-t)/86400000);
+}
+function allStagesDone(rec){
+  const done=String(rec[COL.stagesDone]||"").split(",").map(s=>s.trim()).filter(Boolean);
+  return STAGES.every(s=>done.includes(s.id));
+}
+function missingStages(rec){
+  const done=String(rec[COL.stagesDone]||"").split(",").map(s=>s.trim()).filter(Boolean);
+  return STAGES.filter(s=>!done.includes(s.id));
+}
+
+/* ============================================================
+   RENDER — ENTRY
+   ============================================================ */
+const $=id=>document.getElementById(id);
+
+function renderTabs(){
+  const done=String(current[COL.stagesDone]||"").split(",").map(s=>s.trim());
+  $("tabs").innerHTML=STAGES.map(st=>{
+    const sel=st.id===activeStage, isDone=done.includes(st.id);
+    return `<button class="tab team-${st.team}" role="tab" aria-selected="${sel}" data-stage="${st.id}">
+      <span class="dot"></span>${st.label}${isDone?'<span class="check">✓</span>':''}</button>`;
+  }).join("");
+  document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{activeStage=b.dataset.stage;renderStage();});
+}
+
+function renderStage(){
+  renderTabs();
+  const st=STAGES.find(s=>s.id===activeStage);
+  $("enteredByLabel").textContent=st.team==="PM"?"Your name (PM Checker)":"Your name (QC checker)";
+  $("enteredBy").value=current[st.team==="PM"?COL.pmChecker:COL.qcChecker]||"";
+  $("checks").innerHTML=st.fields.map(k=>{
+    const f=FIELDS[k]; const raw=current[f.col]; const cur=(raw===0||raw==="0"||raw===1||raw==="1"||raw===2||raw==="2")?String(raw):"0";
+    return `<div class="check-row team-${f.team}">
+      <div class="name">${f.label}</div><div class="hint">${f.hint}</div>
+      <div class="seg" data-key="${k}">
+        <button data-v="0" aria-pressed="${cur==='0'}">0</button>
+        <button data-v="1" aria-pressed="${cur==='1'}">1</button>
+        <button data-v="2" aria-pressed="${cur==='2'}">2</button>
+      </div></div>`;
+  }).join("");
+  document.querySelectorAll(".seg").forEach(seg=>seg.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{
+    seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed","false"));
+    btn.setAttribute("aria-pressed","true");
+    current[FIELDS[seg.dataset.key].col]=Number(btn.dataset.v); renderScores();
+  }));
+  st.fields.forEach(k=>{const c=FIELDS[k].col; if(current[c]===undefined) current[c]=0;});
+  renderScores();
+}
+
+function renderScores(){
+  const s=computeScores(current);
+  $("pmScore").textContent=`${s.pm}/${pmMax()}`; $("qcScore").textContent=`${s.qc}/${qcMax()}`;
+  $("pmErr").textContent=round(s.errPm)+"%"; $("pmCheck").textContent=round(s.pmCheck)+"%";
+  $("qcErr").textContent=round(s.errQc)+"%"; $("qualityCheck").textContent=round(s.qualityCheck)+"%";
+}
+
+function renderAsnStatus(){
+  const el=$("asnStatus");
+  if(!current[COL.asn]){ el.innerHTML="No assignment loaded."; $("warnbar").className="warnbar"; return; }
+  const done=String(current[COL.stagesDone]||"").split(",").map(s=>s.trim()).filter(Boolean);
+  const pills=STAGES.map(st=>`<span class="tag ${done.includes(st.id)?'done':''}">${done.includes(st.id)?'✓ ':''}${st.label}</span>`).join("");
+  const dl=current[COL.deadline]?` · due ${current[COL.deadline]}`:"";
+  el.innerHTML=`<strong style="color:var(--ink)">${current[COL.asn]}</strong> · ${current[COL.reviewType]||'—'}${dl} ${pills}`;
+  // deadline + completeness warning
+  const wb=$("warnbar"); const d=daysUntil(current[COL.deadline]);
+  if(d!==null && !allStagesDone(current)){
+    const miss=missingStages(current).map(s=>s.label).join(", ");
+    if(d<0){ wb.className="warnbar urgent show"; wb.textContent=`Overdue by ${Math.abs(d)} day(s) and not all stages are complete. Missing: ${miss}.`; }
+    else if(d<=CONFIG.ALERT_URGENT_DAYS){ wb.className="warnbar urgent show"; wb.textContent=`Due in ${d} day(s). All stages must be completed before delivery. Missing: ${miss}.`; }
+    else if(d<=CONFIG.ALERT_SOON_DAYS){ wb.className="warnbar soon show"; wb.textContent=`Due in ${d} day(s). Still to complete: ${miss}.`; }
+    else wb.className="warnbar";
+  } else wb.className="warnbar";
+}
+
+/* ---------- recent table ---------- */
+const RECENT_COLS=[COL.date,COL.asn,COL.reviewType,COL.deadline,COL.pmChecker,COL.qcChecker,COL.errPmPct,COL.pmCheckPct,COL.errPct,COL.qualityPct,COL.stagesDone];
+function pctCell(v){ const n=Number(v); if(isNaN(n)) return `<td class="num"></td>`;
+  const cls=n>=90?'pct-good':n>=70?'pct-mid':'pct-bad'; return `<td class="num ${cls}">${v}</td>`; }
+async function renderRecent(){
+  let rows=[]; try{rows=await apiGetAll();}catch(e){toast("Could not load: "+e.message,true);}
+  rows.sort((a,b)=>String(b[COL.updated]||"").localeCompare(String(a[COL.updated]||"")));
+  $("recentHead").innerHTML=RECENT_COLS.map(c=>`<th>${c}</th>`).join("");
+  if(!rows.length){$("recentEmpty").classList.remove("hidden");$("recentBody").innerHTML="";return;}
+  $("recentEmpty").classList.add("hidden");
+  $("recentBody").innerHTML=rows.slice(0,40).map(r=>"<tr>"+RECENT_COLS.map(c=>{
+    if([COL.pmCheckPct,COL.qualityPct].includes(c)) return pctCell(r[c]);
+    const isNum=[COL.errPmPct,COL.errPct].includes(c);
+    return `<td class="${isNum?'num':''}">${r[c]===undefined?'':r[c]}</td>`;
+  }).join("")+"</tr>").join("");
+}
+
+/* ============================================================
+   ACTIONS — ENTRY
+   ============================================================ */
+function freshRecord(asn){
+  return {[COL.asn]:asn,[COL.reviewType]:$("reviewType").value||"",[COL.date]:today(),
+    [COL.createdOn]:$("createdOn").value||"",[COL.deadline]:$("deadline").value||"",[COL.stagesDone]:""};
+}
+async function loadAsn(){
+  const asn=$("asn").value.trim().toUpperCase(); if(!asn){toast("Enter an ASN code first",true);return;}
+  $("asn").value=asn; let rec=null;
+  try{rec=await apiGetOne(asn);}catch(e){toast("Lookup failed: "+e.message,true);}
+  if(rec){ current=rec;
+    if(rec[COL.reviewType])$("reviewType").value=rec[COL.reviewType];
+    $("createdOn").value=rec[COL.createdOn]||""; $("deadline").value=rec[COL.deadline]||"";
+    toast("Loaded "+asn);
+  } else { current=freshRecord(asn); toast("New assignment — "+asn); }
+  renderAsnStatus(); renderStage();
+}
+function newAsn(){
+  const asn=$("asn").value.trim().toUpperCase(); if(!asn){toast("Enter an ASN code first",true);return;}
+  $("asn").value=asn; current=freshRecord(asn); renderAsnStatus(); renderStage(); toast("Started new — "+asn);
+}
+async function saveStage(){
+  if(!current[COL.asn]){toast("Load or start an ASN first",true);return;}
+  const st=STAGES.find(s=>s.id===activeStage);
+  const nameCol=st.team==="PM"?COL.pmChecker:COL.qcChecker;
+  const values={};
+  values[COL.asn]=current[COL.asn];
+  values[COL.reviewType]=$("reviewType").value||current[COL.reviewType]||"";
+  values[COL.date]=current[COL.date]||today();
+  if($("createdOn").value) values[COL.createdOn]=$("createdOn").value;
+  if($("deadline").value)  values[COL.deadline]=$("deadline").value;
+  values[nameCol]=$("enteredBy").value.trim();
+  if($("comments").value.trim()) values[COL.comments]=$("comments").value.trim();
+  st.fields.forEach(k=>{const c=FIELDS[k].col; values[c]=num(current[c]);});
+  const done=new Set(String(current[COL.stagesDone]||"").split(",").map(s=>s.trim()).filter(Boolean));
+  done.add(st.id); values[COL.stagesDone]=[...done].join(", ");
+
+  $("saveBtn").disabled=true; $("saveNote").textContent="Saving…";
+  try{
+    const rec=await apiUpsert(current[COL.asn],values);
+    current=rec; renderAsnStatus(); renderStage(); $("comments").value="";
+    $("saveNote").textContent="Saved "+nowStamp(); toast(st.label+" saved");
+    renderRecent(); refreshAlertBadge();
+  }catch(e){ $("saveNote").textContent=""; toast("Save failed: "+e.message,true); }
+  finally{ $("saveBtn").disabled=false; }
+}
+function exportRows(rows,name){
+  if(!rows.length){toast("Nothing to export",true);return;}
+  const cols=Object.values(COL).concat(Object.values(FIELDS).map(f=>f.col)).filter((v,i,a)=>a.indexOf(v)===i);
+  const esc=v=>{v=(v===undefined||v===null)?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const csv=[cols.join(",")].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(","))).join("\n");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=name; a.click();
+}
+
+/* ============================================================
+   SCORECARD
+   ============================================================ */
+const SCORE_COLS=[COL.asn,COL.reviewType,COL.deadline,COL.errPmPct,COL.pmCheckPct,COL.errPct,COL.qualityPct,"Status"];
+function parseCodes(text){
+  return text.split(/\r?\n/).map(l=>l.split(/[,\t]/)[0].trim().toUpperCase())
+    .filter(c=>c && !["ASN","ASN CODE","CODE"].includes(c));
+}
+async function runScorecard(){
+  let codes=parseCodes($("codeList").value);
+  $("scoreNote").textContent="Fetching…";
+  let all=[]; try{all=await apiGetAll();}catch(e){toast("Load failed: "+e.message,true);$("scoreNote").textContent="";return;}
+  const map={}; all.forEach(r=>map[String(r[COL.asn]).trim().toUpperCase()]=r);
+
+  let rows;
+  if(codes.length){
+    rows=codes.map(c=>{
+      const r=map[c];
+      if(!r) return {[COL.asn]:c,Status:"not found"};
+      return {...r,Status:statusLabel(r).label};
+    });
+  } else {
+    rows=all.map(r=>({...r,Status:statusLabel(r).label}));
+  }
+  lastScorecardRows=rows;
+  $("scoreHead").innerHTML=SCORE_COLS.map(c=>`<th>${c}</th>`).join("");
+  if(!rows.length){$("scoreEmpty").classList.remove("hidden");$("scoreBody").innerHTML="";$("scoreNote").textContent="";return;}
+  $("scoreEmpty").classList.add("hidden");
+  $("scoreBody").innerHTML=rows.map(r=>"<tr>"+SCORE_COLS.map(c=>{
+    if([COL.pmCheckPct,COL.qualityPct].includes(c)) return pctCell(r[c]);
+    const isNum=[COL.errPmPct,COL.errPct].includes(c);
+    return `<td class="${isNum?'num':''}">${r[c]===undefined?'':r[c]}</td>`;
+  }).join("")+"</tr>").join("");
+  $("scoreNote").textContent=`${rows.length} assignment(s)`;
+}
+function statusLabel(rec){
+  const complete=allStagesDone(rec); const d=daysUntil(rec[COL.deadline]);
+  if(complete) return {key:"done",label:"Complete"};
+  if(d===null) return {key:"ontrack",label:"In progress"};
+  if(d<0) return {key:"overdue",label:`Overdue ${Math.abs(d)}d`};
+  if(d<=CONFIG.ALERT_URGENT_DAYS) return {key:"urgent",label:`Urgent · ${d}d`};
+  if(d<=CONFIG.ALERT_SOON_DAYS) return {key:"soon",label:`Due soon · ${d}d`};
+  return {key:"ontrack",label:`On track · ${d}d`};
+}
+
+/* ============================================================
+   DEADLINES (alerts)
+   ============================================================ */
+async function renderDeadlines(){
+  let rows=[]; try{rows=await apiGetAll();}catch(e){toast("Load failed: "+e.message,true);}
+  rows=rows.filter(r=>r[COL.deadline]);
+  const onlyAtt=$("onlyAttention").checked;
+  // urgency ordering
+  const rank={overdue:0,urgent:1,soon:2,ontrack:3,done:4};
+  const enriched=rows.map(r=>({r,st:statusLabel(r),d:daysUntil(r[COL.deadline])}));
+  enriched.sort((a,b)=> (rank[a.st.key]-rank[b.st.key]) || ((a.d??1e9)-(b.d??1e9)));
+  const shown=onlyAtt?enriched.filter(e=>["overdue","urgent","soon"].includes(e.st.key)):enriched;
+
+  if(!shown.length){$("dlEmpty").classList.remove("hidden");$("alertList").innerHTML="";$("dlEmpty").textContent=rows.length?"Nothing needs attention right now.":"No assignments with a delivery deadline yet.";return;}
+  $("dlEmpty").classList.add("hidden");
+  $("alertList").innerHTML=shown.map(({r,st,d})=>{
+    const miss=missingStages(r);
+    const missTags=miss.length?`<div class="miss-tags">${miss.map(m=>`<span class="tag miss">${m.label}</span>`).join("")}</div>`:`<div class="miss-tags"><span class="tag done">✓ all stages complete</span></div>`;
+    const dayBig = d===null?"—":(d<0?`+${Math.abs(d)}`:d);
+    const dayLbl = d===null?"no date":(d<0?"days over":"days left");
+    return `<div class="alert ${st.key}">
+      <div class="when"><div class="big">${dayBig}</div><div class="lbl">${dayLbl}</div></div>
+      <div class="who"><span class="asn">${r[COL.asn]}</span> · ${r[COL.reviewType]||'—'} · due ${r[COL.deadline]}
+        · QC ${r[COL.qualityPct]??'—'}% / PM ${r[COL.pmCheckPct]??'—'}%${missTags}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+        <span class="status-pill ${st.key}">${st.label}</span>
+        <button class="btn-ghost" data-fill="${r[COL.asn]}">Fill now</button></div>
+    </div>`;
+  }).join("");
+  document.querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{ $("asn").value=b.dataset.fill; switchView("entry"); loadAsn(); });
+}
+async function refreshAlertBadge(){
+  let rows=[]; try{rows=await apiGetAll();}catch{return;}
+  const n=rows.filter(r=>r[COL.deadline]&&["overdue","urgent","soon"].includes(statusLabel(r).key)).length;
+  const b=$("alertBadge"); if(n){b.textContent=n;b.classList.remove("hidden");}else b.classList.add("hidden");
+}
+
+/* ============================================================
+   NAV + INIT
+   ============================================================ */
+function switchView(v){
+  document.querySelectorAll("nav.views button").forEach(b=>b.classList.toggle("active",b.dataset.view===v));
+  document.querySelectorAll("[data-page]").forEach(p=>p.classList.toggle("hidden",p.dataset.page!==v));
+  if(v==="deadlines") renderDeadlines();
+  if(v==="entry") renderRecent();
+}
+function toast(msg,err){const t=$("toast");t.textContent=msg;t.className="toast show"+(err?" err":"");clearTimeout(toast._t);toast._t=setTimeout(()=>t.className="toast"+(err?" err":""),2600);}
+function setConn(){const c=$("conn"); if(live()){c.textContent="● live · shared sheet";c.className="conn live";} else {c.textContent="● local demo · not shared";c.className="conn local";}}
+
+setConn();
+$("createdOn").value=todayIso();
+renderStage(); renderAsnStatus(); renderRecent(); refreshAlertBadge();
+
+document.querySelectorAll("nav.views button").forEach(b=>b.onclick=()=>switchView(b.dataset.view));
+$("loadBtn").onclick=loadAsn; $("newBtn").onclick=newAsn; $("saveBtn").onclick=saveStage;
+$("refreshBtn").onclick=()=>{renderRecent();refreshAlertBadge();}; $("exportBtn").onclick=()=>apiGetAll().then(r=>exportRows(r,"tnf_qc_scores.csv"));
+$("scoreBtn").onclick=runScorecard; $("scoreExportBtn").onclick=()=>exportRows(lastScorecardRows,"tnf_scorecard.csv");
+$("dlRefresh").onclick=renderDeadlines; $("onlyAttention").onchange=renderDeadlines;
+$("asn").addEventListener("keydown",e=>{if(e.key==="Enter")loadAsn();});
+$("codeFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f)return; const rd=new FileReader();
+  rd.onload=()=>{ const codes=parseCodes(rd.result); $("codeList").value=codes.join("\n"); toast(codes.length+" code(s) loaded"); };
+  rd.readAsText(f);
+});
+</script>
+</body>
+</html>
